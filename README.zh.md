@@ -6,7 +6,7 @@
 
 - 一个 Session 对每台服务器复用一条连接，空闲超时自动回收。
 - 一条命令阻塞一个等待窗口，窗口内**带同一 request id** 的反馈作为工具返回值；窗口之后同 id 的反馈作为独立消息送达，并按「该组第一条消息」起算的固定窗口合并成单条。
-- rcon 地址与密码属于部署机密，放在 profile 的 `cordis.patch.yml` 里，位于 agent 沙箱之外。
+- rcon 地址与密码属于部署机密，放在 profile 的 `cordis.patch.yml` 里——在 Session 工作区之外，路径也不会交给 agent；这是审慎，不是边界（见[已知限制](#已知限制与后续工作)）。
 - 命令有前缀白名单：命中直接执行，其余按策略走审批或直接拒绝。
 - 请注意此插件期望 [ServerEssentials BetterRcon](https://github.com/CaveNightingale/ServerEssentials/tree/master/src/main/java/io/github/cavenightingale/essentials/rcon) 功能所示的轻微修改版 rcon 。原版理应也能工作，但命令反馈分组可能不准确，这是 Minecraft 原版 rcon 自身的原因，我们无法做什么。
 
@@ -56,13 +56,17 @@ sequenceDiagram
 
 > 官方依据：`docs/user/develop/basic/publish.zh.md`（打包与安装插件）与 `apps/cli/reference/README.zh.md` 的「插件管理」「源码执行」「加载顺序」章节。本节步骤都在源码 checkout 上实测过。
 
-依赖的 `@deepseek-ai/*` 是 harness 工作区的内部包，当前版本没有可用的 registry 发布，因此本包以**链接**方式使用同级的 harness 检出。
+依赖的 `@deepseek-ai/*` 已按本插件目标的那条 harness 发布线固定——`@deepseek-ai/dsh-{agent,llm,session,tools}@0.2.0-rc.2`、`@deepseek-ai/cordis@~4.0.4`、`@deepseek-ai/schemastery@~3.18.4`——所以在**没有 harness 检出**的机器上直接 registry 安装即可得到一致的依赖图。工具链同样固定：`typescript@*` 现在会解析到无关的 7.x 重写版，`@types/node@*` 会解析到新很多的大版本。
 
 ```sh
 cd dsh-rcon
-npm run link-harness   # 把 @deepseek-ai/* 与 tsc 软链到 ../deepseek-harness
+npm install            # 从 registry 装 peer 与工具链
 npm run build          # 产出 lib/（main 指向它，链接安装不会自动构建）
 ```
+
+真正在**运行时**被引用的 harness 包只有三个（`@deepseek-ai/dsh-llm`、`@deepseek-ai/dsh-tools`、`@deepseek-ai/schemastery`，都只用到纯值构造器与 schema）；`@deepseek-ai/cordis`、`dsh-agent`、`dsh-session` 只用于类型，已被编译器抹掉。因此安装副本是安全的，装进 profile 时也只要求本包自己的 `node_modules` 存在且可解析。
+
+想对着同级的 harness 检出开发？`npm run link-harness` 会把这些包换成指向 `../deepseek-harness` 的软链（可用 `DSH_HARNESS_ROOT` 覆盖位置），并一并提供 `tsc`；它可以与 `npm install` 叠加，也可以单独使用。
 
 安装进一个 profile（在 harness 检出根目录执行；源码启动加 `pnpm` 前缀）。相对路径 spec 会锚定到调用目录，所以在插件 checkout 里 `add .` 装的就是这个 checkout：
 
@@ -70,7 +74,7 @@ npm run build          # 产出 lib/（main 指向它，链接安装不会自动
 dsh plugin --profile web add /path/to/dsh-rcon
 ```
 
-`add` 会把本包链接为 profile 依赖，并因为它声明了 `dsh.bundle` 而把对应的 patch 层追加进 `dsh.profile.bundles`。pnpm 会警告 peerDependencies 无法从 link 目标解析——这正是本包自带 `node_modules`（`link-harness` 产物）的原因。
+`add` 会把本包链接为 profile 依赖，并因为它声明了 `dsh.bundle` 而把对应的 patch 层追加进 `dsh.profile.bundles`。它不会在 checkout 里跑构建或安装，所以加进来之前 `node_modules` 与 `lib/` 必须已经存在。
 
 **新 profile 需要带应用组合包**。`plugin add` 初始化一个没有随附模板的 profile 时只装 `@deepseek-ai/dsh-base`，不含任何界面。用官方的模板创建方式一步到位（示例以 `web` 模板为例）：
 
@@ -106,7 +110,7 @@ dsh web --patch ../dsh-rcon/manual-test.patch.yml
 
 ## 配置
 
-本包自带的 `cordis.patch.yml` **故意不含任何服务器与凭据**：只有一个插入行，`servers` 为空，因此未经配置就加载会立刻报错。真实配置写在 profile 自己的 `$DSH_HOME/profiles/<name>/cordis.patch.yml`——它在任何 Session 工作区之外，沙箱内的 agent 读不到。
+本包自带的 `cordis.patch.yml` **故意不含任何服务器与凭据**：只有一个插入行，`servers` 为空，因此未经配置就加载会立刻报错。真实配置写在 profile 自己的 `$DSH_HOME/profiles/<name>/cordis.patch.yml`——它在任何 Session 工作区之外，路径也不会交给 agent。
 
 patch 是**整行替换**而非按 key 深合并，所以覆盖时要重述所有想保留的键：
 
@@ -185,11 +189,14 @@ Minecraft rcon feedback from server "main" for request #1:
 ## 开发
 
 ```sh
-npm run link-harness   # 软链 @deepseek-ai/* 与 tsc（可用 DSH_HARNESS_ROOT 覆盖 harness 位置）
+npm install            # 从 registry 装 peer 与工具链（版本与 harness 发布线对齐）
+npm run link-harness   # 可选：把这些包换成指向同级 harness 检出的软链
 npm run typecheck      # 同时检查 src 与 tests
 npm run build          # 产出 lib/
 npm test               # 单元 + 假服务器集成用例
 ```
+
+`npm install` 与 `npm run link-harness` 都会写 `node_modules/@deepseek-ai/*`，两者互相覆盖；如果你的目标是本地 harness 检出，跑完 `install` 记得再跑一次 `link-harness`。
 
 测试覆盖：rcon 分帧（拆包/粘包/非法帧长/编码上界）、按 request id 分组与窗口锚定、连接复用与断线重连、窗口内/外分流、不同 id 不串组、服务器级 link 隔离、空闲回收、`inject`/`followup`、配置校验矩阵、命令前缀策略。
 
@@ -198,6 +205,7 @@ npm test               # 单元 + 假服务器集成用例
 ## 已知限制与后续工作
 
 - **rcon 本身是明文协议**，没有传输加密；不要把 25575 暴露到不可信网络。
+- **把密码放在工作区外是审慎，不是边界。** 沙箱模式只管控**写入**：`read-only` 仍允许受限进程读取该 OS 用户能读的任何路径，而 agent 的工具进程就以该用户身份运行。因此一次刻意去找 `$DSH_HOME/profiles/<name>/cordis.patch.yml` 的工具调用可以读到密码；这里唯一的保障是该路径不会交到 agent 手上。凭据存储也是同一性质，它自己的文档就写明这一点。
 - **`feedback_delivery` 是 Session 级粘性设置**，不是逐 request id。逐条区分需要一张「request id → 投递方式」映射，而它的生命周期无法自然终止（迟到反馈随时可能再来），所以选了单个粘性值以保持有界。
 - **权限策略只有前缀维度**：没有参数级规则，也没有按服务器区分白名单。要做更细的策略，可在同一 `tools/pre-execute` 门禁上再加一层监听器。
 - **同一 agent 内的 rcon 调用是排他的**（工具未声明并发安全），因此一条连接上不会出现重叠的等待窗口。

@@ -37,7 +37,7 @@ export interface Config {
 }
 
 /** Server endpoints, timing, and command policy. Passwords are deployment secrets
- * and belong in the profile's own `cordis.patch.yml`, outside the agent's sandbox. */
+ * and belong in the profile's own `cordis.patch.yml`, outside the session workspace. */
 export const Config: z<Config> = z.object({
   servers: z.array(z.object({
     name: z.string(),
@@ -106,7 +106,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
   if (first === undefined) {
     throw new Error(
       'dsh-rcon: config.servers must list at least one server; set it in the profile cordis.patch.yml '
-      + 'under $DSH_HOME/profiles/<name>/ (outside the agent sandbox)',
+      + 'under $DSH_HOME/profiles/<name>/ (outside the session workspace)',
     )
   }
   const names = new Set<string>()

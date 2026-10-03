@@ -6,7 +6,7 @@ An out-of-tree DeepSeek Harness plugin that brings the rcon console of one or mo
 
 - A Session reuses one connection per server, reclaimed after an idle timeout.
 - One command blocks for a wait window. Feedback tagged with **the same request id** inside that window becomes the tool result; feedback for the same id after the window arrives as its own message, merged into one by a fixed window anchored at that group's first message.
-- The rcon endpoint and password are deployment secrets. They live in the profile's `cordis.patch.yml`, outside the agent sandbox.
+- The rcon endpoint and password are deployment secrets. They live in the profile's `cordis.patch.yml`, outside the session workspace and never handed to the agent — prudence, not a boundary (see [Known limitations](#known-limitations-and-deferred-work)).
 - Commands have a prefix allowlist: a match runs, and everything else goes to approval or a flat denial according to policy.
 - Note that this plugin expects the slightly modified rcon described by [ServerEssentials BetterRcon](https://github.com/CaveNightingale/ServerEssentials/tree/master/src/main/java/io/github/cavenightingale/essentials/rcon). Vanilla rcon should still work, but command-feedback grouping may be inaccurate; that is a property of vanilla Minecraft rcon and beyond what we can fix.
 
@@ -55,13 +55,17 @@ Vanilla Minecraft only collects the feedback produced during the command call. A
 
 > Official sources: `docs/user/develop/basic/publish.zh.md` (packaging and installing plugins) and the "plugin management", "source execution", and "layer order" sections of `apps/cli/reference/README.zh.md`. Every step below was verified against a source checkout.
 
-The `@deepseek-ai/*` dependencies are internal harness workspace packages with no usable registry release at this version, so this package consumes a sibling harness checkout by **linking**.
+The `@deepseek-ai/*` dependencies are pinned to the harness release line this plugin targets — `@deepseek-ai/dsh-{agent,llm,session,tools}@0.2.0-rc.2`, `@deepseek-ai/cordis@~4.0.4`, `@deepseek-ai/schemastery@~3.18.4` — so a plain registry install resolves a consistent graph with **no harness checkout present**. The toolchain is pinned for the same reason: `typescript@*` now resolves to the unrelated 7.x rewrite and `@types/node@*` to a much newer major.
 
 ```sh
 cd dsh-rcon
-npm run link-harness   # symlink @deepseek-ai/* and tsc to ../deepseek-harness
+npm install            # peers and toolchain from the registry
 npm run build          # emit lib/ (main points at it; a link install never builds)
 ```
+
+Only three harness packages are imported at **runtime** (`@deepseek-ai/dsh-llm`, `@deepseek-ai/dsh-tools` and `@deepseek-ai/schemastery`, all for pure value builders and schemas); `@deepseek-ai/cordis`, `dsh-agent` and `dsh-session` are type-only and erased by the compiler. A profile install therefore only needs the package's own `node_modules` to be present and resolvable.
+
+Hacking against a sibling harness checkout instead? `npm run link-harness` swaps those packages for symlinks into `../deepseek-harness` (`DSH_HARNESS_ROOT` overrides the location) and also provides `tsc`. It can be combined with `npm install` or used on its own.
 
 Install into a profile (run from the harness checkout root; prefix with `pnpm` for a source launch). A relative spec is anchored to the calling directory, so `add .` inside the plugin checkout installs that checkout:
 
@@ -69,7 +73,7 @@ Install into a profile (run from the harness checkout root; prefix with `pnpm` f
 dsh plugin --profile web add /path/to/dsh-rcon
 ```
 
-`add` links this package as a profile dependency and, because it declares `dsh.bundle`, appends its patch layer to `dsh.profile.bundles`. pnpm warns that the peer dependencies cannot be resolved from the link target — which is exactly why this package ships its own `node_modules` (the `link-harness` output).
+`add` links this package as a profile dependency and, because it declares `dsh.bundle`, appends its patch layer to `dsh.profile.bundles`. It does not run a build or an install inside the checkout, so `node_modules` and `lib/` must already exist before adding it.
 
 **A new profile needs an app bundle.** When `plugin add` initializes a profile that has no shipped template, it installs only `@deepseek-ai/dsh-base`, with no user interface. Create it from the shipped template instead (the `web` template here):
 
@@ -105,7 +109,7 @@ dsh web --patch ../dsh-rcon/manual-test.patch.yml
 
 ## Configuration
 
-The `cordis.patch.yml` shipped in this package **deliberately carries no server and no credential**: one insert row with an empty `servers` list, so loading it unconfigured fails immediately. The real configuration lives in the profile's own `$DSH_HOME/profiles/<name>/cordis.patch.yml`, which is outside every Session workspace and unreadable by the sandboxed agent.
+The `cordis.patch.yml` shipped in this package **deliberately carries no server and no credential**: one insert row with an empty `servers` list, so loading it unconfigured fails immediately. The real configuration lives in the profile's own `$DSH_HOME/profiles/<name>/cordis.patch.yml`: outside every Session workspace, and its path is never given to the agent.
 
 A patch **replaces the whole row** rather than deep-merging keys, so restate every key you want to keep:
 
@@ -184,11 +188,14 @@ The wire carries the command **verbatim**. The server then applies its own `Comm
 ## Development
 
 ```sh
-npm run link-harness   # symlink @deepseek-ai/* and tsc (DSH_HARNESS_ROOT overrides the harness location)
+npm install            # peers and toolchain from the registry (pins match the harness release line)
+npm run link-harness   # optional: swap those packages for symlinks into a sibling harness checkout
 npm run typecheck      # checks src and tests together
 npm run build          # emit lib/
 npm test               # unit plus fake-server integration cases
 ```
+
+`npm install` and `npm run link-harness` both write `node_modules/@deepseek-ai/*`, so they overwrite each other; re-run `link-harness` after an `install` if you are targeting a local harness checkout.
 
 Coverage: rcon framing (split and coalesced chunks, invalid frame length, encoder bound), request-id grouping and window anchoring, connection reuse and reconnect, in-window versus post-window routing, no cross-id merging, per-server link isolation, idle reclaim, `inject`/`followup`, the configuration validation matrix, and the command prefix policy.
 
@@ -197,6 +204,7 @@ Coverage: rcon framing (split and coalesced chunks, invalid frame length, encode
 ## Known limitations and deferred work
 
 - **rcon is a plaintext protocol** with no transport encryption; do not expose 25575 to an untrusted network.
+- **Keeping the password outside the workspace is prudence, not a boundary.** Sandbox modes govern *writes*: `read-only` still lets a confined command read any path the OS user can read, and the agent's tools run as that user. Nothing here stops a tool call from reading `$DSH_HOME/profiles/<name>/cordis.patch.yml`; the file's path is simply never handed to the agent. The credential store has the same property and says so itself.
 - **`feedback_delivery` is a sticky Session-level setting**, not per request id. Per-request routing would need a "request id → delivery" map whose lifetime has no natural end (late feedback can always arrive), so a single sticky value keeps it bounded.
 - **The permission policy is prefix-only**: no argument-level rules and no per-server allowlists. For finer policy, add another listener on the same `tools/pre-execute` gate.
 - **rcon calls within one agent are exclusive** (the tool declares no concurrency safety), so overlapping wait windows on one connection cannot occur.

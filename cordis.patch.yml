@@ -2,8 +2,9 @@
 #
 # rcon endpoints and passwords are deployment secrets and stay OUT of this
 # package: they belong in the profile's own `cordis.patch.yml`, which lives
-# under `$DSH_HOME/profiles/<name>/` outside any Session workspace, so the
-# sandboxed agent can never read them.
+# under `$DSH_HOME/profiles/<name>/`, outside any Session workspace and never
+# handed to the agent. That is prudence, not a boundary: sandbox modes govern
+# writes, so a tool call that went looking could still read it.
 #
 # A later layer replaces this row's whole `config` value (patches replace, they
 # do not deep-merge), so restate every key you keep. Example profile patch:

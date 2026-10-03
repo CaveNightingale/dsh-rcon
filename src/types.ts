@@ -47,7 +47,8 @@ export interface RconServerConfig {
   host: string
   /** TCP port. */
   port: number
-  /** rcon password; a deployment secret that belongs outside the agent sandbox. */
+  /** rcon password; a deployment secret that belongs in the deployment's own
+   * configuration layer, outside the session workspace. */
   password: string
 }
 

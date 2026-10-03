@@ -6,7 +6,7 @@
 #
 # The real file is gitignored because it carries a live rcon password. Never
 # commit credentials: the deployment's own layer is
-# $DSH_HOME/profiles/<name>/cordis.patch.yml, outside any agent sandbox.
+# $DSH_HOME/profiles/<name>/cordis.patch.yml, outside any Session workspace.
 - insert:
     - id: dsh-rcon
       name: '/home/billy/Projects/dsh-rcon/lib/index.js'
