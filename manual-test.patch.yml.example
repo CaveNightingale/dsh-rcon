@@ -1,0 +1,32 @@
+# Template for a local, uncommitted overlay that loads this plugin by absolute
+# path and points it at a development Minecraft server.
+#
+#   cp manual-test.patch.yml.example manual-test.patch.yml   # then edit
+#   pnpm dsh web --patch /home/billy/Projects/dsh-rcon/manual-test.patch.yml
+#
+# The real file is gitignored because it carries a live rcon password. Never
+# commit credentials: the deployment's own layer is
+# $DSH_HOME/profiles/<name>/cordis.patch.yml, outside any agent sandbox.
+- insert:
+    - id: dsh-rcon
+      name: '/home/billy/Projects/dsh-rcon/lib/index.js'
+      config:
+        servers:
+          - name: main
+            host: 127.0.0.1
+            port: 25575
+            password: '<rcon password>'
+        # Short enough to watch the idle reclaim during a manual test.
+        idleTimeoutMs: 300000
+        defaultWaitMs: 1000
+        feedbackBatchMs: 1000
+        connectTimeoutMs: 5000
+        allowedPrefixes:
+          - list
+          - say
+          - time
+          - weather
+          - tp
+          - gamemode
+        # Ungranted commands go to the approval UI instead of a flat denial.
+        otherwise: ask

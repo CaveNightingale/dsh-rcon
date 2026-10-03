@@ -1,0 +1,7 @@
+node_modules/
+lib/
+*.tsbuildinfo
+
+# A local --patch overlay carries a live rcon password, so it never enters
+# history; copy manual-test.patch.yml.example to create one.
+manual-test.patch.yml

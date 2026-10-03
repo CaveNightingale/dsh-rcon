@@ -1,0 +1,40 @@
+# Layer contributed by the `dsh-rcon` bundle.
+#
+# rcon endpoints and passwords are deployment secrets and stay OUT of this
+# package: they belong in the profile's own `cordis.patch.yml`, which lives
+# under `$DSH_HOME/profiles/<name>/` outside any Session workspace, so the
+# sandboxed agent can never read them.
+#
+# A later layer replaces this row's whole `config` value (patches replace, they
+# do not deep-merge), so restate every key you keep. Example profile patch:
+#
+#   - id: dsh-rcon
+#     config:
+#       servers:
+#         - name: main
+#           host: 10.0.0.4
+#           port: 25575
+#           password: '<rcon password>'
+#         - name: creative
+#           host: 10.0.0.5
+#           port: 25575
+#           password: '<rcon password>'
+#       defaultServer: main
+#       idleTimeoutMs: 18000000
+#       defaultWaitMs: 1000
+#       feedbackBatchMs: 1000
+#       connectTimeoutMs: 5000
+#       allowedPrefixes: [list, say, time, weather]
+#       otherwise: deny
+#
+# Until at least one server with a password is provided, the plugin fails loud
+# at load with an actionable error instead of silently running unconfigured.
+- insert:
+    - id: dsh-rcon
+      name: dsh-rcon
+      config:
+        servers: []
+        # Commands headed by one of these prefixes run; everything else is
+        # denied. Add the prefixes this deployment actually trusts.
+        allowedPrefixes: []
+        otherwise: deny
