@@ -30,7 +30,7 @@ export interface Config {
   feedbackBatchMs?: number
   /** Bound on the TCP connect plus login handshake, in milliseconds. */
   connectTimeoutMs?: number
-  /** Command prefixes that run without approval. */
+  /** Command prefixes that run without approval on **every** server. */
   allowedPrefixes?: string[]
   /** Policy for a command matching no allowed prefix. */
   otherwise?: UngrantedCommandPolicy
@@ -44,6 +44,7 @@ export const Config: z<Config> = z.object({
     host: z.string().default('127.0.0.1'),
     port: z.number().step(1).min(1).max(65535).default(25575),
     password: z.string(),
+    allowedPrefixes: z.array(z.string()).default([]),
   })).default([]),
   defaultServer: z.string(),
   idleTimeoutMs: z.number().step(1).min(1).default(DEFAULT_IDLE_TIMEOUT_MS),
@@ -77,11 +78,10 @@ function requireText(value: string | undefined, field: string): string {
  * single-strip form, so a padded entry could never match a command and would sit
  * in the configuration as dead policy; it is rejected instead of rewritten.
  * @param prefix - raw allowlist entry.
- * @param index - entry position, used in the error message.
+ * @param field - full config path of the entry, used in the error message.
  * @returns the prefix as configured.
  */
-function resolveAllowedPrefix(prefix: string, index: number): string {
-  const field = `allowedPrefixes[${String(index)}]`
+function resolveAllowedPrefix(prefix: string, field: string): string {
   const value = requireText(prefix, field)
   if (value.trim() !== value) {
     throw new TypeError(`dsh-rcon: config.${field} must not have leading or trailing whitespace`)
@@ -91,6 +91,10 @@ function resolveAllowedPrefix(prefix: string, index: number): string {
 
 /**
  * Apply schema defaults and validate the constraints the schema does not express.
+ *
+ * Per-server allowlists are resolved alongside the deployment-wide one but are
+ * kept separate: they are grants the server adds, and the union is taken where
+ * the decision is made (`effectiveAllowedPrefixes`).
  * @param config - raw plugin configuration.
  * @returns fully resolved configuration.
  * @throws when the deployment lists no usable server or a bound is out of range.
@@ -101,6 +105,10 @@ export function resolveConfig(config: Config): ResolvedConfig {
     host: requireText(server.host, `servers[${String(index)}].host`),
     port: requireInteger(server.port, `servers[${String(index)}].port`, 1, 65535),
     password: requireText(server.password, `servers[${String(index)}].password`),
+    allowedPrefixes: (server.allowedPrefixes ?? []).map((prefix, position) => resolveAllowedPrefix(
+      prefix,
+      `servers[${String(index)}].allowedPrefixes[${String(position)}]`,
+    )),
   }))
   const [first] = servers
   if (first === undefined) {
@@ -129,7 +137,8 @@ export function resolveConfig(config: Config): ResolvedConfig {
     defaultWaitMs: requireInteger(config.defaultWaitMs ?? 1000, 'defaultWaitMs', 0, 0x7fff_ffff),
     feedbackBatchMs: requireInteger(config.feedbackBatchMs ?? 1000, 'feedbackBatchMs', 0, 0x7fff_ffff),
     connectTimeoutMs: requireInteger(config.connectTimeoutMs ?? 5000, 'connectTimeoutMs', 1, 0x7fff_ffff),
-    allowedPrefixes: (config.allowedPrefixes ?? []).map(resolveAllowedPrefix),
+    allowedPrefixes: (config.allowedPrefixes ?? [])
+      .map((prefix, index) => resolveAllowedPrefix(prefix, `allowedPrefixes[${String(index)}]`)),
     otherwise: config.otherwise ?? 'deny',
   }
 }

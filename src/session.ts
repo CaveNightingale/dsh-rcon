@@ -10,6 +10,7 @@ import { boundContextSummary, createUserMessage, errorChain } from '@deepseek-ai
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { FeedbackBatch } from './batch.ts'
 import { RconConnection } from './connection.ts'
+import { unknownServerReason } from './policy.ts'
 import type {
   FeedbackDelivery,
   RconAgent,
@@ -171,10 +172,7 @@ export class RconSession {
     const existing = this.links.get(name)
     if (existing !== undefined) return existing
     const server = this.config.servers.find(candidate => candidate.name === name)
-    if (server === undefined) {
-      const known = this.config.servers.map(candidate => candidate.name).join(', ')
-      throw new Error(`dsh-rcon: unknown server ${JSON.stringify(name)}; configured servers are ${known}`)
-    }
+    if (server === undefined) throw new Error(unknownServerReason(name, this.config))
     const created = new ServerLink(
       server,
       this.config,

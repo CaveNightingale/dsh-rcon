@@ -16,11 +16,17 @@
             host: 127.0.0.1
             port: 25575
             password: '<rcon password>'
+            # This server's own grants, added to the deployment-wide list below.
+            # Grants only add: the global list still applies here in full.
+            allowedPrefixes:
+              - fill
+              - setblock
         # Short enough to watch the idle reclaim during a manual test.
         idleTimeoutMs: 300000
         defaultWaitMs: 1000
         feedbackBatchMs: 1000
         connectTimeoutMs: 5000
+        # Granted on every configured server.
         allowedPrefixes:
           - list
           - say

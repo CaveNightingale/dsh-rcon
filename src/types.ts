@@ -50,6 +50,10 @@ export interface RconServerConfig {
   /** rcon password; a deployment secret that belongs in the deployment's own
    * configuration layer, outside the session workspace. */
   password: string
+  /** Command prefixes this server grants **in addition to** the deployment-wide
+   * `allowedPrefixes`. Grants are additive only: a per-server list can widen what
+   * a server accepts, never take away a deployment-wide grant. */
+  allowedPrefixes?: string[]
 }
 
 /** One configured server with every default applied. */
@@ -58,6 +62,9 @@ export interface ResolvedServer {
   readonly host: string
   readonly port: number
   readonly password: string
+  /** Extra prefixes this server grants on top of the deployment-wide list; empty
+   * when it adds none. */
+  readonly allowedPrefixes: readonly string[]
 }
 
 /** Validated configuration with every default applied. */
@@ -70,7 +77,8 @@ export interface ResolvedConfig {
   readonly defaultWaitMs: number
   readonly feedbackBatchMs: number
   readonly connectTimeoutMs: number
-  /** Command prefixes that run without approval. */
+  /** Deployment-wide command prefixes that run without approval; each server's
+   * own `allowedPrefixes` is added to this list for calls that target it. */
   readonly allowedPrefixes: readonly string[]
   /** Policy applied to a command matching no allowed prefix. */
   readonly otherwise: UngrantedCommandPolicy

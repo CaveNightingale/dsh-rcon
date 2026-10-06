@@ -10,8 +10,9 @@
  * request id that arrives later is delivered as its own message, merged by a
  * fixed window anchored at that request id's first message.
  *
- * Deployment policy decides which commands may run: a command headed by one of
- * `allowedPrefixes` runs, and every other command is asked about or denied.
+ * Deployment policy decides which commands may run, per server: a command headed
+ * by one of the deployment-wide `allowedPrefixes` or by a prefix the target
+ * server grants itself runs, and every other command is asked about or denied.
  *
  * @module dsh-rcon
  */
@@ -22,7 +23,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { resolveConfig } from './config.ts'
 import type { Config } from './config.ts'
-import { decideCommand, dispatchedCommand, readCommandArgument } from './policy.ts'
+import { decideCommand, dispatchedCommand, effectiveAllowedPrefixes, readCommandArgument, readServerArgument, unknownServerReason } from './policy.ts'
 import { RconSession } from './session.ts'
 import type { ResolvedConfig } from './types.ts'
 
@@ -94,9 +95,21 @@ export function apply(ctx: Context, config: Config): void {
     const command = readCommandArgument(exec.arguments)
     // A call without a usable command is rejected by the tool's own schema.
     if (command === undefined) return next()
+    // The allowlist is per server, so the target is resolved here, the same way
+    // the tool resolves it. A name this deployment does not configure cannot
+    // succeed later either, so it is refused before a policy question that could
+    // not have changed the outcome.
+    const requested = readServerArgument(exec.arguments) ?? resolved.defaultServer
+    const server = resolved.servers.find(candidate => candidate.name === requested)
+    if (server === undefined) return { kind: 'deny', reason: unknownServerReason(requested, resolved) }
     // Judge the text the dispatcher will read, not the wire spelling that the
     // server still has to strip one slash from.
-    const decision = decideCommand(dispatchedCommand(command), resolved.allowedPrefixes, resolved.otherwise)
+    const decision = decideCommand(
+      dispatchedCommand(command),
+      effectiveAllowedPrefixes(resolved, server),
+      resolved.otherwise,
+      server.name,
+    )
     if (decision.kind === 'allow') return next()
     if (decision.kind === 'deny') return { kind: 'deny', reason: decision.reason }
     return { kind: 'ask', reason: decision.reason }

@@ -21,12 +21,17 @@ function textOf(message: UserMessage | undefined): string {
   return first?.type === 'text' ? first.text : ''
 }
 
+/** A server as these tests write one: endpoints matter here, command policy does
+ * not, so `allowedPrefixes` may be left out. */
+type TestServer = Omit<ResolvedServer, 'allowedPrefixes'> & { allowedPrefixes?: readonly string[] }
+
 /** Build a resolved config with timings short enough for a test. */
-function testConfig(servers: ResolvedServer[], overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
-  const [first] = servers
+function testConfig(servers: readonly TestServer[], overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
+  const resolvedServers = servers.map(server => ({ allowedPrefixes: [], ...server }))
+  const [first] = resolvedServers
   assert.ok(first !== undefined)
   return {
-    servers,
+    servers: resolvedServers,
     defaultServer: first.name,
     idleTimeoutMs: 60_000,
     defaultWaitMs: 50,

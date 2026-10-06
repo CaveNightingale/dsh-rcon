@@ -7,7 +7,7 @@
 - 一个 Session 对每台服务器复用一条连接，空闲超时自动回收。
 - 一条命令阻塞一个等待窗口，窗口内**带同一 request id** 的反馈作为工具返回值；窗口之后同 id 的反馈作为独立消息送达，并按「该组第一条消息」起算的固定窗口合并成单条。
 - rcon 地址与密码属于部署机密，放在 profile 的 `cordis.patch.yml` 里——在 Session 工作区之外，路径也不会交给 agent；这是审慎，不是边界（见[已知限制](#已知限制与后续工作)）。
-- 命令有前缀白名单：命中直接执行，其余按策略走审批或直接拒绝。
+- 命令有逐服前缀白名单：全局列表 ∪ 该服自己声明的授权，命中直接执行，其余按策略走审批或直接拒绝。
 - 请注意此插件期望 [ServerEssentials BetterRcon](https://github.com/CaveNightingale/ServerEssentials/tree/master/src/main/java/io/github/cavenightingale/essentials/rcon) 功能所示的轻微修改版 rcon 。原版理应也能工作，但命令反馈分组可能不准确，这是 Minecraft 原版 rcon 自身的原因，我们无法做什么。
 
 ## 警告
@@ -125,6 +125,7 @@ patch 是**整行替换**而非按 key 深合并，所以覆盖时要重述所�
       - name: creative
         host: 10.0.0.5
         password: '<rcon password>'
+        allowedPrefixes: [fill, setblock]  # 该服自己的授权，叠加在下面的全局列表之上
     defaultServer: main     # 省略则取 servers[0]
     idleTimeoutMs: 18000000 # 省略则 5 小时
     defaultWaitMs: 1000
@@ -136,13 +137,14 @@ patch 是**整行替换**而非按 key 深合并，所以覆盖时要重述所�
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `servers` | 数组 | `[]` | 每项 `{ name, host, port?, password }`。名字唯一；为空时**加载即失败** |
+| `servers` | 数组 | `[]` | 每项 `{ name, host, port?, password, allowedPrefixes? }`。名字唯一；为空时**加载即失败** |
+| `servers[].allowedPrefixes` | 字符串数组 | `[]` | 该服在全局列表**之上**额外授予的前缀。只增不减：逐服列表只能放宽该服可执行的范围，不会收回任何全局授权 |
 | `defaultServer` | 字符串 | `servers[0].name` | 调用未指定 `server` 时使用的服务器；必须已配置 |
 | `idleTimeoutMs` | 整数 ≥1 | `18000000`（5h） | 一条 link 无任何收发流量多久后回收 |
 | `defaultWaitMs` | 整数 ≥0 | `1000` | 调用未指定 `wait_ms` 时的等待窗口 |
 | `feedbackBatchMs` | 整数 ≥0 | `1000` | 窗口外反馈的合并窗口，从该组首条消息起算 |
 | `connectTimeoutMs` | 整数 ≥1 | `5000` | TCP 连接 + 登录握手的上限 |
-| `allowedPrefixes` | 字符串数组 | `[]` | 免审批的命令前缀，按 dispatcher 形式匹配。空项或带首尾空白的项会被拒绝——不静默重写，也不静默忽略 |
+| `allowedPrefixes` | 字符串数组 | `[]` | 在**所有**服务器上免审批的命令前缀，按 dispatcher 形式匹配。空项或带首尾空白的项会被拒绝——不静默重写，也不静默忽略 |
 | `otherwise` | `ask` \| `deny` | `deny` | 未命中前缀时的策略 |
 
 配置错误在加载时响亮失败：服务器为空、名字重复、缺 host/password、端口或时间越界，都会直接报错并指出字段。
@@ -181,8 +183,10 @@ Minecraft rcon feedback from server "main" for request #1:
 
 命令**原样上线**；服务端随后自己做 `CommandSourceStack.trimOptionalPrefix`，因此全程只去一个 `/`，以 `//mod-command` 拼写的 Mod 命令能原封不动到达 dispatcher。门禁因此按 **dispatcher 形式**判定——即最多去掉一个前导 `/`、空白不动的那段文本，它才是真正决定行为的文本。于是 `/list` 与 `list` 是同一条命令；要放行 Mod 命令就按 dispatcher 形式写白名单：`//mod-command` 由前缀 `/mod-command` 覆盖。判定挂在 dsh 文档化的 `tools/pre-execute` 门禁上：
 
-1. 命中 `allowedPrefixes` 任一前缀 → 放行；
+1. 命中目标服务器被授予的任一前缀——全局 `allowedPrefixes` ∪ 该服自己的—— → 放行；
 2. 否则按 `otherwise`：`ask` 走审批 UI，`deny` 直接拒绝（默认，fail-closed）。
+
+白名单是逐服的，因此门禁按与工具相同的方式解析目标（调用里的 `server` 参数，省略则默认服）并取两表并集；拒绝理由和审批提示都会写明这条命令会落到哪个服。逐服列表只做加法：`main` 授了 `list`，其他服就不必重写；没写自己列表的服完全继承全局表。指定了本部署未配置的服务器名时，会在进入策略问题之前就拒绝——因为这个调用即使得到授权也无法成功。
 
 `ask` 依赖 `approval` 服务；未组合该服务的部署会降级为拒绝并给出原因。PTC 的子调用同样经过该门禁，无法旁路。
 

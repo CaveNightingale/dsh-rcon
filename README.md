@@ -7,7 +7,7 @@ An out-of-tree DeepSeek Harness plugin that brings the rcon console of one or mo
 - A Session reuses one connection per server, reclaimed after an idle timeout.
 - One command blocks for a wait window. Feedback tagged with **the same request id** inside that window becomes the tool result; feedback for the same id after the window arrives as its own message, merged into one by a fixed window anchored at that group's first message.
 - The rcon endpoint and password are deployment secrets. They live in the profile's `cordis.patch.yml`, outside the session workspace and never handed to the agent — prudence, not a boundary (see [Known limitations](#known-limitations-and-deferred-work)).
-- Commands have a prefix allowlist: a match runs, and everything else goes to approval or a flat denial according to policy.
+- Commands have a prefix allowlist, per server: the deployment-wide list plus the target server's own grants. A match runs, and everything else goes to approval or a flat denial according to policy.
 - Note that this plugin expects the slightly modified rcon described by [ServerEssentials BetterRcon](https://github.com/CaveNightingale/ServerEssentials/tree/master/src/main/java/io/github/cavenightingale/essentials/rcon). Vanilla rcon should still work, but command-feedback grouping may be inaccurate; that is a property of vanilla Minecraft rcon and beyond what we can fix.
 
 ## Warning
@@ -124,6 +124,7 @@ A patch **replaces the whole row** rather than deep-merging keys, so restate eve
       - name: creative
         host: 10.0.0.5
         password: '<rcon password>'
+        allowedPrefixes: [fill, setblock]  # this server's own grants, added to the list below
     defaultServer: main     # servers[0] when omitted
     idleTimeoutMs: 18000000 # five hours when omitted
     defaultWaitMs: 1000
@@ -135,13 +136,14 @@ A patch **replaces the whole row** rather than deep-merging keys, so restate eve
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
-| `servers` | array | `[]` | Each entry `{ name, host, port?, password }`. Names are unique; an empty list **fails at load** |
+| `servers` | array | `[]` | Each entry `{ name, host, port?, password, allowedPrefixes? }`. Names are unique; an empty list **fails at load** |
+| `servers[].allowedPrefixes` | string array | `[]` | Prefixes this server grants **on top of** the deployment-wide list. Grants only add: a per-server list widens what that server accepts, it never revokes a global grant |
 | `defaultServer` | string | `servers[0].name` | Server used when a call names none; must be configured |
 | `idleTimeoutMs` | integer ≥1 | `18000000` (5h) | How long a link may go without traffic before it is reclaimed |
 | `defaultWaitMs` | integer ≥0 | `1000` | Wait window when a call omits `wait_ms` |
 | `feedbackBatchMs` | integer ≥0 | `1000` | Merge window for post-window feedback, anchored at that group's first message |
 | `connectTimeoutMs` | integer ≥1 | `5000` | Bound on the TCP connect plus login handshake |
-| `allowedPrefixes` | string array | `[]` | Command prefixes that skip approval, matched against the dispatcher form. An empty or padded entry is rejected rather than rewritten or ignored |
+| `allowedPrefixes` | string array | `[]` | Command prefixes that skip approval on **every** server, matched against the dispatcher form. An empty or padded entry is rejected rather than rewritten or ignored |
 | `otherwise` | `ask` \| `deny` | `deny` | Policy for a command matching no prefix |
 
 Misconfiguration fails loud at load: an empty server list, duplicate names, a missing host or password, or an out-of-range port or timing reports the offending field.
@@ -180,8 +182,10 @@ Its message source carries `kind: "dsh-rcon"`, `rconServer`, `rconRequestId`, an
 
 The wire carries the command **verbatim**. The server then applies its own `CommandSourceStack.trimOptionalPrefix`, so only that single strip ever happens and a mod command spelled `//mod-command` reaches the dispatcher intact. The gate therefore judges the **dispatcher form** — the command with at most one leading `/` removed, whitespace untouched — which is exactly the text that decides behaviour. So `/list` and `list` are one command, and a mod command is granted by allowlisting its dispatcher spelling: `//mod-command` is covered by the prefix `/mod-command`. The decision hangs off the documented `tools/pre-execute` gate:
 
-1. matching any `allowedPrefixes` prefix → run;
+1. matching any prefix the target server grants — the deployment-wide `allowedPrefixes` plus that server's own — → run;
 2. otherwise `otherwise`: `ask` goes to the approval UI, `deny` refuses outright (the default, fail-closed).
+
+The allowlist is per server, so the gate resolves the target the same way the tool does (the call's `server` argument, or the default server) and unions the two lists. Both the refusal and the approval prompt name the server the call would hit. Per-server lists are purely additive: `main` granting `list` means no server needs to repeat it, and a server that adds nothing inherits the deployment-wide list unchanged. A call naming a server this deployment does not configure is refused before the policy question, since it could not have succeeded after it either.
 
 `ask` depends on the `approval` service; a deployment without it degrades to a refusal with a stated reason. PTC sub-dispatches pass through the same gate and cannot bypass it.
 

@@ -20,12 +20,13 @@
 #           host: 10.0.0.5
 #           port: 25575
 #           password: '<rcon password>'
+#           allowedPrefixes: [fill, setblock]   # this server's own grants, added to the list below
 #       defaultServer: main
 #       idleTimeoutMs: 18000000
 #       defaultWaitMs: 1000
 #       feedbackBatchMs: 1000
 #       connectTimeoutMs: 5000
-#       allowedPrefixes: [list, say, time, weather]
+#       allowedPrefixes: [list, say, time, weather]   # granted on every server
 #       otherwise: deny
 #
 # Until at least one server with a password is provided, the plugin fails loud
@@ -35,7 +36,9 @@
       name: dsh-rcon
       config:
         servers: []
-        # Commands headed by one of these prefixes run; everything else is
-        # denied. Add the prefixes this deployment actually trusts.
+        # Commands headed by one of these prefixes run on every server; a server
+        # entry may add its own `allowedPrefixes` on top of them. Grants only
+        # add, so a per-server list can never revoke one of these. Everything
+        # else is denied. Add the prefixes this deployment actually trusts.
         allowedPrefixes: []
         otherwise: deny
