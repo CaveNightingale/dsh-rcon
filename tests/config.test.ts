@@ -51,18 +51,26 @@ test('out-of-range ports and timings are rejected', () => {
   assert.throws(() => resolveConfig({ servers: [main], connectTimeoutMs: 0 }), /config\.connectTimeoutMs/)
 })
 
-test('an empty allowlist entry is rejected rather than ignored', () => {
-  assert.throws(
-    () => resolveConfig({ servers: [main], allowedPrefixes: ['list', ' '] }),
-    /allowedPrefixes\[1\]/,
-  )
+test('allowlist entries are kept exactly as written', () => {
+  // Nothing drops, trims, or rewrites an entry: a prefix means what it spells,
+  // and `matchesAllowedPrefix` gives the empty string its allow-everything
+  // meaning. Configuration is not the place to second-guess either.
+  const resolved = resolveConfig({
+    servers: [{ ...main, allowedPrefixes: ['', ' fill '] }],
+    allowedPrefixes: ['list', ' '],
+  })
+  assert.deepEqual(resolved.allowedPrefixes, ['list', ' '])
+  assert.deepEqual(resolved.servers[0]?.allowedPrefixes, ['', ' fill '])
 })
 
-test('a padded allowlist entry is rejected rather than sitting there dead', () => {
-  assert.throws(
-    () => resolveConfig({ servers: [main], allowedPrefixes: [' list '] }),
-    /allowedPrefixes\[0\] must not have leading or trailing whitespace/,
-  )
+test('an allowlist entry that is not a string never reaches a crash', () => {
+  // The schema names the exact path when a deployment is loaded; a direct call
+  // must survive one too, and carries it through untouched.
+  const resolved = resolveConfig({
+    servers: [main],
+    allowedPrefixes: [null as unknown as string, 7 as unknown as string],
+  })
+  assert.deepEqual(resolved.allowedPrefixes, [null, 7])
 })
 
 test('a slash-leading allowlist entry is valid: it targets the dispatcher spelling', () => {
@@ -84,20 +92,9 @@ test('a server keeps its own allowlist beside the deployment-wide one', () => {
   assert.deepEqual(resolved.servers[1]?.allowedPrefixes, ['fill', 'setblock'])
 })
 
-test('a per-server allowlist entry is validated like a global one', () => {
-  assert.throws(
-    () => resolveConfig({ servers: [{ ...main, allowedPrefixes: ['list', ' '] }] }),
-    /servers\[0\]\.allowedPrefixes\[1\]/,
-  )
-  assert.throws(
-    () => resolveConfig({ servers: [{ ...main, allowedPrefixes: [' fill '] }] }),
-    /servers\[0\]\.allowedPrefixes\[0\] must not have leading or trailing whitespace/,
-  )
-})
-
 test('the schema itself fills the per-server allowlist default', () => {
-  // The deployment layer is normalized through `Config` before resolveConfig
-  // sees it, so the default has to exist in the schema, not only in the fallback.
+  // The deployment layer is run through `Config` before resolveConfig sees it,
+  // so the default has to exist in the schema, not only in the fallback.
   const resolved = resolveConfig(Config({ servers: [main] }))
   assert.deepEqual(resolved.servers[0]?.allowedPrefixes, [])
 })

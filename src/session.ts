@@ -76,7 +76,7 @@ class ServerLink {
 
   /**
    * Send one command over this link.
-   * @param command - normalized console command.
+   * @param command - console command, sent verbatim.
    * @param waitMs - blocking window in milliseconds.
    * @param signal - caller-owned cancellation.
    * @returns the command's request id and the feedback received inside the window.
@@ -139,7 +139,7 @@ export class RconSession {
   /**
    * Run one console command against one configured server.
    * @param server - name of the configured server to use.
-   * @param command - normalized console command.
+   * @param command - console command, sent verbatim.
    * @param waitMs - blocking window in milliseconds.
    * @param delivery - delivery for feedback arriving after the window; omitted keeps the current mode.
    * @param signal - caller-owned cancellation.

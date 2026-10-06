@@ -30,7 +30,7 @@ export interface Config {
   feedbackBatchMs?: number
   /** Bound on the TCP connect plus login handshake, in milliseconds. */
   connectTimeoutMs?: number
-  /** Command prefixes that run without approval on **every** server. */
+  /** Command prefixes that run without approval. */
   allowedPrefixes?: string[]
   /** Policy for a command matching no allowed prefix. */
   otherwise?: UngrantedCommandPolicy
@@ -55,36 +55,31 @@ export const Config: z<Config> = z.object({
   otherwise: z.union(['ask', 'deny']).default('deny'),
 })
 
-/** Require one bounded integer, naming the config field on failure. */
-function requireInteger(value: number | undefined, field: string, min: number, max: number): number {
-  if (value === undefined || !Number.isSafeInteger(value) || value < min || value > max) {
+/** Render the rejected value for an error message; `undefined` and `null` are
+ * named explicitly, and an empty or blank string stays visible between quotes. */
+function describeValue(value: unknown): string {
+  return JSON.stringify(value) ?? String(value)
+}
+
+/** Require one bounded integer, naming the config field and the value on failure. */
+function requireInteger(value: unknown, field: string, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) {
     throw new TypeError(
-      `dsh-rcon: config.${field} must be an integer in [${String(min)}, ${String(max)}], got ${String(value)}`,
+      `dsh-rcon: config.${field} must be an integer in [${String(min)}, ${String(max)}], `
+      + `got ${describeValue(value)}`,
     )
   }
   return value
 }
 
-/** Require one non-empty string, naming the config field on failure. */
-function requireText(value: string | undefined, field: string): string {
-  if (value === undefined || value.trim() === '') {
-    throw new TypeError(`dsh-rcon: config.${field} must be a non-empty string`)
-  }
-  return value
-}
-
 /**
- * Require one usable allowlist prefix. Matching runs against the dispatcher's
- * single-strip form, so a padded entry could never match a command and would sit
- * in the configuration as dead policy; it is rejected instead of rewritten.
- * @param prefix - raw allowlist entry.
- * @param field - full config path of the entry, used in the error message.
- * @returns the prefix as configured.
+ * Require one non-empty string, naming the config field and the value it saw.
  */
-function resolveAllowedPrefix(prefix: string, field: string): string {
-  const value = requireText(prefix, field)
-  if (value.trim() !== value) {
-    throw new TypeError(`dsh-rcon: config.${field} must not have leading or trailing whitespace`)
+function requireText(value: unknown, field: string): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new TypeError(
+      `dsh-rcon: config.${field} must be a non-empty string, got ${describeValue(value)}`,
+    )
   }
   return value
 }
@@ -92,9 +87,10 @@ function resolveAllowedPrefix(prefix: string, field: string): string {
 /**
  * Apply schema defaults and validate the constraints the schema does not express.
  *
- * Per-server allowlists are resolved alongside the deployment-wide one but are
- * kept separate: they are grants the server adds, and the union is taken where
- * the decision is made (`effectiveAllowedPrefixes`).
+ * Allowlist entries are not validated or rewritten: a prefix means exactly the
+ * text it spells, and the empty string — a prefix of every command — keeps its
+ * meaning of "everything runs". Entries are copied so the resolved config is a
+ * snapshot of the layer that produced it.
  * @param config - raw plugin configuration.
  * @returns fully resolved configuration.
  * @throws when the deployment lists no usable server or a bound is out of range.
@@ -105,10 +101,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     host: requireText(server.host, `servers[${String(index)}].host`),
     port: requireInteger(server.port, `servers[${String(index)}].port`, 1, 65535),
     password: requireText(server.password, `servers[${String(index)}].password`),
-    allowedPrefixes: (server.allowedPrefixes ?? []).map((prefix, position) => resolveAllowedPrefix(
-      prefix,
-      `servers[${String(index)}].allowedPrefixes[${String(position)}]`,
-    )),
+    allowedPrefixes: [...(server.allowedPrefixes ?? [])],
   }))
   const [first] = servers
   if (first === undefined) {
@@ -137,8 +130,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
     defaultWaitMs: requireInteger(config.defaultWaitMs ?? 1000, 'defaultWaitMs', 0, 0x7fff_ffff),
     feedbackBatchMs: requireInteger(config.feedbackBatchMs ?? 1000, 'feedbackBatchMs', 0, 0x7fff_ffff),
     connectTimeoutMs: requireInteger(config.connectTimeoutMs ?? 5000, 'connectTimeoutMs', 1, 0x7fff_ffff),
-    allowedPrefixes: (config.allowedPrefixes ?? [])
-      .map((prefix, index) => resolveAllowedPrefix(prefix, `allowedPrefixes[${String(index)}]`)),
+    allowedPrefixes: [...(config.allowedPrefixes ?? [])],
     otherwise: config.otherwise ?? 'deny',
   }
 }

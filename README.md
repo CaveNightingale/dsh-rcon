@@ -143,7 +143,7 @@ A patch **replaces the whole row** rather than deep-merging keys, so restate eve
 | `defaultWaitMs` | integer ≥0 | `1000` | Wait window when a call omits `wait_ms` |
 | `feedbackBatchMs` | integer ≥0 | `1000` | Merge window for post-window feedback, anchored at that group's first message |
 | `connectTimeoutMs` | integer ≥1 | `5000` | Bound on the TCP connect plus login handshake |
-| `allowedPrefixes` | string array | `[]` | Command prefixes that skip approval on **every** server, matched against the dispatcher form. An empty or padded entry is rejected rather than rewritten or ignored |
+| `allowedPrefixes` | string array | `[]` | Command prefixes that skip approval on **every** server, matched against the dispatcher form. Entries are used exactly as written; an empty entry heads every command, so it grants them all |
 | `otherwise` | `ask` \| `deny` | `deny` | Policy for a command matching no prefix |
 
 Misconfiguration fails loud at load: an empty server list, duplicate names, a missing host or password, or an out-of-range port or timing reports the offending field.
@@ -186,6 +186,8 @@ The wire carries the command **verbatim**. The server then applies its own `Comm
 2. otherwise `otherwise`: `ask` goes to the approval UI, `deny` refuses outright (the default, fail-closed).
 
 The allowlist is per server, so the gate resolves the target the same way the tool does (the call's `server` argument, or the default server) and unions the two lists. Both the refusal and the approval prompt name the server the call would hit. Per-server lists are purely additive: `main` granting `list` means no server needs to repeat it, and a server that adds nothing inherits the deployment-wide list unchanged. A call naming a server this deployment does not configure is refused before the policy question, since it could not have succeeded after it either.
+
+Prefixes are matched **literally**: a command is covered when it starts with exactly the text an entry spells. Nothing is trimmed, folded, or otherwise rewritten. In particular `''` heads every command, which makes `allowedPrefixes: ['']` the way to spell "every command runs here without approval".
 
 `ask` depends on the `approval` service; a deployment without it degrades to a refusal with a stated reason. PTC sub-dispatches pass through the same gate and cannot bypass it.
 

@@ -62,6 +62,35 @@ test('an empty allowlist grants nothing', () => {
   assert.equal(decideCommand('list', [], 'deny').kind, 'deny')
 })
 
+test('an empty prefix grants everything, because it heads every command', () => {
+  // `''` is a prefix of every string. That is the semantics of a prefix list, not
+  // an accident: `['']` is how a deployment says "every command runs here".
+  assert.equal(matchesAllowedPrefix('op Steve', ['']), true)
+  assert.equal(decideCommand('op Steve', [''], 'deny').kind, 'allow')
+  assert.equal(decideCommand('stop', [''], 'ask').kind, 'allow')
+  // A usable prefix beside it is still matched on its own terms.
+  assert.equal(matchesAllowedPrefix('list', ['', 'say']), true)
+  assert.equal(matchesAllowedPrefix('op Steve', ['', 'say']), true)
+})
+
+test('a prefix is matched literally', () => {
+  // Nothing is trimmed or folded: what the entry spells is what it covers.
+  assert.equal(matchesAllowedPrefix('op Steve', [' ']), false)
+  assert.equal(matchesAllowedPrefix(' list', [' ']), true)
+  assert.equal(matchesAllowedPrefix('list', [' list']), false)
+  assert.equal(matchesAllowedPrefix('List', ['list']), false)
+  assert.equal(decideCommand('op Steve', [' '], 'deny').kind, 'deny')
+})
+
+test('a misshapen entry matches nothing instead of throwing', () => {
+  // The schema rejects a non-string entry with its exact path when a deployment
+  // is loaded; should one arrive anyway it simply covers nothing.
+  assert.equal(matchesAllowedPrefix('list', [null as unknown as string]), false)
+  assert.equal(matchesAllowedPrefix('list', [undefined as unknown as string]), false)
+  assert.equal(matchesAllowedPrefix('list', [7 as unknown as string]), false)
+  assert.equal(decideCommand('list', [7 as unknown as string], 'deny').kind, 'deny')
+})
+
 test('a near miss is not covered by a prefix', () => {
   assert.equal(decideCommand('op Steve', ['time'], 'deny').kind, 'deny')
   assert.equal(decideCommand('stop', ['stone'], 'deny').kind, 'deny')

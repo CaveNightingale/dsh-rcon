@@ -39,6 +39,7 @@
         # Commands headed by one of these prefixes run on every server; a server
         # entry may add its own `allowedPrefixes` on top of them. Grants only
         # add, so a per-server list can never revoke one of these. Everything
-        # else is denied. Add the prefixes this deployment actually trusts.
+        # else is denied. Prefixes are matched literally, and an empty string
+        # heads every command: `['']` means "everything runs here".
         allowedPrefixes: []
         otherwise: deny

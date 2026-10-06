@@ -101,6 +101,15 @@ test('a call without a usable command is left to the tool schema', async () => {
   assert.deepEqual(await judge(gate, { command: 7 }), DELEGATED)
 })
 
+test('an empty prefix turns the gate off for that server, as configured', async () => {
+  // `['']` is an explicit allow-all: the empty string heads every command. The
+  // gate must not quietly narrow it — that would answer a policy question the
+  // deployment already answered.
+  const open = gateOf({ servers: SERVERS, allowedPrefixes: [''], otherwise: 'ask' })
+  assert.deepEqual(await judge(open, { command: 'op Steve' }), DELEGATED)
+  assert.deepEqual(await judge(open, { server: 'creative', command: 'stop' }), DELEGATED)
+})
+
 test('another tool is not this gate\'s business', async () => {
   const gate = gateOf({ servers: SERVERS, allowedPrefixes: ['list'], otherwise: 'deny' })
   assert.deepEqual(await gate({ name: 'bash', arguments: { command: 'list' } }, async () => DELEGATED), DELEGATED)

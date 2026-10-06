@@ -29,8 +29,13 @@ export function dispatchedCommand(command: string): string {
 }
 
 /**
- * Whether one normalized command is covered by the configured prefixes.
- * @param command - normalized console command.
+ * Whether one dispatcher-form command is covered by the configured prefixes.
+ *
+ * A prefix covers a command when the command starts with it, and nothing more:
+ * entries are matched exactly as the deployment wrote them. The empty string is a
+ * prefix of every string, so an empty entry covers every command — which is what
+ * makes `allowedPrefixes: ['']` mean allow-all.
+ * @param command - dispatcher-form console command.
  * @param prefixes - allowed command prefixes.
  * @returns whether any prefix heads the command.
  */
@@ -69,7 +74,7 @@ export function unknownServerReason(name: string, config: ResolvedConfig): strin
 
 /**
  * Decide one rcon command against the allowlist of the server it targets.
- * @param command - normalized console command.
+ * @param command - dispatcher-form console command.
  * @param prefixes - allowed command prefixes for the target server.
  * @param otherwise - policy for a command matching no prefix.
  * @param server - target server name, named in the reason when given.
